@@ -1,1 +1,0 @@
-"""Agent logic for Cutback."""
