@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
+
+from src.models import EditAction
 
 
 def delete_range(
@@ -55,12 +58,20 @@ def delete_range(
         )
 
 
+def execute_action(action: EditAction, input_path: str, output_path: str) -> None:
+    if action.action == "DELETE_RANGE":
+        delete_range(input_path, output_path, action.start_time, action.end_time)
+        return
+    raise ValueError(f"Unsupported action: {action.action}")
+
+
 if __name__ == "__main__":
     root = Path(__file__).resolve().parent.parent
-    delete_range(
+    payload = json.loads((root / "action.json").read_text(encoding="utf-8"))
+    action = EditAction.model_validate(payload)
+    execute_action(
+        action,
         str(root / "data" / "demo.mp4"),
         str(root / "outputs" / "python_delete_10_20.mp4"),
-        10,
-        20,
     )
     print("Wrote outputs/python_delete_10_20.mp4")

@@ -1,0 +1,5 @@
+{
+  "action": "DELETE_RANGE",
+  "start_time": 10,
+  "end_time": 20
+}
