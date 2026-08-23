@@ -4,7 +4,7 @@
 
 Cutback 是一个 **Review-to-Edit Agent**。
 
-它将视频审核意见转换为结构化、可执行的 Timeline 操作，经剪辑者确认后执行修改。
+它将视频审核意见转换为结构化、可执行的 Timeline 操作，经用户确认后修改视频。
 
 核心流程：
 
@@ -20,7 +20,7 @@ Cutback 是一个 **Review-to-Edit Agent**。
 
 > 00:10–00:20 这段删掉。
 
-Cutback 将其转换为：
+Cutback 转换为：
 
 ```json
 {
@@ -30,53 +30,25 @@ Cutback 将其转换为：
 }
 ```
 
-用户确认后执行修改并生成新版本视频。
+用户确认后，系统执行修改并生成新版本。
 
 ---
 
-## 3. V0 目标
+## 3. V0 核心假设
 
-跑通一个最小真实闭环：
-
-**视频 + Review
-→ EditAction
-→ 用户确认
-→ 执行剪辑
-→ Preview**
-
-V0 只验证一个核心假设：
+V0 只验证一个问题：
 
 > **Review 能否可靠转化为实际视频编辑操作。**
+
+不验证完整自动剪辑，也不验证完整 NLE。
 
 ---
 
 ## 4. 当前能力
 
-### Phase 1｜视频执行
+### 4.1 EditAction
 
-已实现：
-
-**DELETE_RANGE**
-
-执行链路：
-
-**Python → FFmpeg → Output**
-
-输入：
-
-* `input.mp4`
-* `start_time`
-* `end_time`
-
-输出：
-
-* 删除指定区间后的新视频
-
----
-
-### Phase 2｜结构化编辑动作
-
-使用 `EditAction` 统一表达编辑操作。
+Cutback 使用结构化 `EditAction` 表达编辑操作。
 
 当前仅支持：
 
@@ -94,17 +66,11 @@ V0 只验证一个核心假设：
 * `end_time > start_time`
 * 当前仅允许 `DELETE_RANGE`
 
-执行链路：
-
-**EditAction → Executor → FFmpeg**
-
 ---
 
-### Phase 3｜审核意见解析
+### 4.2 Review 解析
 
-当前阶段：
-
-**Review → LLM → EditAction**
+使用 LLM 将自然语言审核意见转换为 `EditAction`。
 
 例如：
 
@@ -122,39 +88,53 @@ V0 只验证一个核心假设：
 
 原则：
 
-* LLM 只负责理解自然语言并生成结构化动作。
+* LLM 负责理解 Review。
 * `EditAction` 负责校验模型输出。
-* Executor 负责确定性执行。
 * 无法明确转换的 Review 不猜测、不执行。
 
 ---
 
-## 5. 后续阶段
+### 4.3 视频执行
 
-### Phase 4｜最小产品界面
+Executor 将合法 `EditAction` 转换为确定性 FFmpeg 操作。
 
-加入：
+执行链路：
 
-* 视频上传
-* Review 输入
-* EditAction 展示
-* Accept / Reject
-* 执行修改
-* 修改前后视频 Preview
+**EditAction → Executor → FFmpeg → Output**
 
-目标：
+当前支持：
 
-> 让非开发者能够完成 Cutback 的完整核心流程。
+**DELETE_RANGE**
 
 ---
 
-### Phase 5｜Evaluation
+### 4.4 产品交互
 
-使用真实 Review 测试：
+当前核心交互：
 
-* Review 解析是否正确
+**上传视频
+→ 输入 Review
+→ AI 生成 EditAction
+→ 展示编辑建议
+→ 用户确认
+→ 执行修改
+→ 对比原视频与新版本**
+
+原则：
+
+> **AI 不得在用户确认前修改视频。**
+
+---
+
+## 5. 下一阶段：Evaluation
+
+下一阶段不优先增加新功能，而是使用真实 Review 测试当前闭环。
+
+记录：
+
+* Review 是否被正确理解
 * EditAction 是否正确
-* Accept / Reject 情况
+* 用户接受 / 拒绝情况
 * 典型 Bad Case
 * 完成修改所需时间
 
@@ -177,7 +157,7 @@ V0 暂不实现：
 * 用户系统
 * 云端部署
 
-只有真实用户反馈证明必要时，才引入新的复杂度。
+> **只有真实需求证明必要时，才引入新的复杂度。**
 
 ---
 
