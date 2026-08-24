@@ -1,0 +1,8 @@
+{"id":"M01","review":"00:30-00:40 这段放到开头","expected_status":"ACTION","expected_action":"MOVE_RANGE","start_time":30,"end_time":40,"destination_time":0}
+{"id":"M02","review":"把 00:45-00:55 挪到 01:20 前面","expected_status":"ACTION","expected_action":"MOVE_RANGE","start_time":45,"end_time":55,"destination_time":80}
+{"id":"M03","review":"2:10-2:20 这一段移到最前面","expected_status":"ACTION","expected_action":"MOVE_RANGE","start_time":130,"end_time":140,"destination_time":0}
+{"id":"M04","review":"把 01:05 到 01:18 这段放到 02:00 前面","expected_status":"ACTION","expected_action":"MOVE_RANGE","start_time":65,"end_time":78,"destination_time":120}
+{"id":"MC01","review":"00:30-00:40 这一段往前挪一下","expected_status":"CLARIFY"}
+{"id":"MC02","review":"把这里放到开头","expected_status":"CLARIFY"}
+{"id":"MC03","review":"00:30-00:40 这段挺适合当开头","expected_status":"CLARIFY"}
+{"id":"MC04","review":"这部分的位置不太对，调整一下","expected_status":"CLARIFY"}

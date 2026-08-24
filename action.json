@@ -1,5 +1,6 @@
 {
-  "action": "DELETE_RANGE",
-  "start_time": 10,
-  "end_time": 20
+  "action": "MOVE_RANGE",
+  "start_time": 30,
+  "end_time": 40,
+  "destination_time": 0
 }
