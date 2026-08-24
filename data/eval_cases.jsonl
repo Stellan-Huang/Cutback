@@ -1,0 +1,18 @@
+{"id":"A01","review":"00:10-00:20 这段删掉","expected_status":"ACTION","start_time":10,"end_time":20}
+{"id":"A02","review":"00:35 到 00:48 这一段不要了","expected_status":"ACTION","start_time":35,"end_time":48}
+{"id":"A03","review":"1:20-1:35 这里太啰嗦了，直接去掉","expected_status":"ACTION","start_time":80,"end_time":95}
+{"id":"A04","review":"把 02:10 到 02:25 这一段删除","expected_status":"ACTION","start_time":130,"end_time":145}
+{"id":"A05","review":"00:42-00:51 这句话删了吧","expected_status":"ACTION","start_time":42,"end_time":51}
+{"id":"A06","review":"3分05秒到3分18秒可以去掉","expected_status":"ACTION","start_time":185,"end_time":198}
+{"id":"C01","review":"00:10-00:20 这里有点拖","expected_status":"CLARIFY"}
+{"id":"C02","review":"这一段短一点","expected_status":"CLARIFY"}
+{"id":"C03","review":"开头节奏不太对","expected_status":"CLARIFY"}
+{"id":"C04","review":"00:50 后面感觉有点啰嗦","expected_status":"CLARIFY"}
+{"id":"C05","review":"中间这部分能不能紧凑一点","expected_status":"CLARIFY"}
+{"id":"C06","review":"1:20 这里处理一下，感觉停顿太久了","expected_status":"CLARIFY"}
+{"id":"N01","review":"00:10-00:20 这一段很好，保留","expected_status":"NO_ACTION"}
+{"id":"N02","review":"这里没问题，不用改","expected_status":"NO_ACTION"}
+{"id":"N03","review":"这个开头挺好的","expected_status":"NO_ACTION"}
+{"id":"N04","review":"00:35 这里的节奏可以","expected_status":"NO_ACTION"}
+{"id":"N05","review":"这一版可以，就这样吧","expected_status":"NO_ACTION"}
+{"id":"N06","review":"这个镜头不用动","expected_status":"NO_ACTION"}

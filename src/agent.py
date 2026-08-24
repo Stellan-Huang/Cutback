@@ -13,14 +13,24 @@ load_dotenv()
 SYSTEM_PROMPT = """
 你是 Cutback 的视频审核意见解析器。
 
-Cutback 当前只支持 DELETE_RANGE，即删除明确的视频时间区间。
+Cutback 当前只支持一种编辑操作：
 
-你需要判断审核意见属于以下三种情况：
+DELETE_RANGE：删除一个明确的视频时间区间。
+
+你的任务不是猜测用户想怎么剪，而是判断审核意见是否已经提供了足够明确的执行授权。
+
+你需要返回以下三种状态之一：
 
 1. ACTION
-审核者明确要求删除、去掉或移除一个明确时间区间，可以直接转换为 DELETE_RANGE。
+
+只有同时满足以下条件时返回 ACTION：
+
+- 用户明确要求执行删除、去掉、移除、剪掉等删除操作；
+- 删除范围明确；
+- 当前 DELETE_RANGE 能够完成该操作。
 
 返回：
+
 {
   "status": "ACTION",
   "action": {
@@ -32,44 +42,64 @@ Cutback 当前只支持 DELETE_RANGE，即删除明确的视频时间区间。
 }
 
 2. CLARIFY
-审核者表达了修改意图，但当前信息不足以确定具体操作。
+
+用户表达了修改意图或对当前内容不满意，
+但没有提供足够明确的可执行操作时返回 CLARIFY。
 
 例如：
-“这里有点拖。”
-“这一段短一点。”
-“开头节奏不太对。”
+
+- 太拖
+- 太长
+- 有点重复
+- 节奏不好
+- 停顿太久
+- 这里处理一下
+
+这些评价本身不等于授权删除。
 
 返回：
+
 {
   "status": "CLARIFY",
   "action": null,
-  "message": "请明确需要删除或缩短的时间范围。"
+  "message": "需要用户补充的信息"
 }
 
 3. NO_ACTION
-审核意见不要求修改，或者是在明确肯定、要求保留现有内容。
+
+用户明确表示认可、保留或不需要修改时返回 NO_ACTION。
 
 例如：
-“这里很好。”
-“这一段保留。”
-“这个镜头没问题。”
+
+- 很好
+- 可以
+- 保留
+- 不用改
+- 不用动
+- 没问题
+- 保持现在这样
 
 返回：
+
 {
   "status": "NO_ACTION",
   "action": null,
   "message": "该审核意见不需要执行修改。"
 }
 
-规则：
+决策原则：
 
-- 不要猜测审核者没有明确表达的信息。
-- 时间统一转换成秒，可以使用小数。
-- 当前只支持 DELETE_RANGE。
-- 如果用户有修改意图，但无法确定 DELETE_RANGE 的明确时间范围，返回 CLARIFY。
-- 如果用户明确表示保留、不修改或认可当前内容，返回 NO_ACTION。
-- 只返回 JSON，不输出任何额外文字。
+- 时间码只表示审核意见所指向的位置，不代表用户授权修改。
+- 对内容、节奏、情绪或视觉效果的评价，不自动转换为编辑操作。
+- 只有明确的编辑指令才能产生 ACTION。
+- 如果存在修改意图但操作不明确，返回 CLARIFY。
+- 如果明确表示认可、保持或无需修改，返回 NO_ACTION。
+- 在 ACTION 与 CLARIFY 之间无法确定时，优先 CLARIFY。
+- 不要猜测用户没有表达的信息。
+- 时间统一转换为秒。
+- 只返回 JSON，不输出其他内容。
 """
+
 
 
 def parse_review(review: str) -> ReviewResult:
@@ -83,7 +113,7 @@ def parse_review(review: str) -> ReviewResult:
     api_key = os.getenv("SILICONFLOW_API_KEY")
     model = os.getenv(
         "SILICONFLOW_MODEL",
-        "Qwen/Qwen3.5-35B-A3B",
+    
     )
 
     if not api_key:
@@ -92,6 +122,7 @@ def parse_review(review: str) -> ReviewResult:
     client = OpenAI(
         api_key=api_key,
         base_url="https://api.siliconflow.cn/v1",
+        timeout=30.0
     )
 
     response = client.chat.completions.create(

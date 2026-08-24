@@ -1,0 +1,12 @@
+{"id":"HA01","review":"00:31 到 00:38 这句不要了，整段剪掉","expected_status":"ACTION","start_time":31,"end_time":38}
+{"id":"HA02","review":"从1分12秒到1分26秒全部移除","expected_status":"ACTION","start_time":72,"end_time":86}
+{"id":"HA03","review":"02:05-02:17 这部分直接删，不保留","expected_status":"ACTION","start_time":125,"end_time":137}
+{"id":"HA04","review":"把 00:44 到 00:52 去掉，前后直接接起来","expected_status":"ACTION","start_time":44,"end_time":52}
+{"id":"HC01","review":"1:10 后面是不是稍微有点长？","expected_status":"CLARIFY"}
+{"id":"HC02","review":"00:55-01:08 这段信息有点重复，你看看怎么处理","expected_status":"CLARIFY"}
+{"id":"HC03","review":"开头前十秒节奏再快一点","expected_status":"CLARIFY"}
+{"id":"HC04","review":"02:30 这里停顿太久了，处理一下","expected_status":"CLARIFY"}
+{"id":"HN01","review":"00:42 这里就保持现在这样","expected_status":"NO_ACTION"}
+{"id":"HN02","review":"这版开头节奏挺顺，不用动","expected_status":"NO_ACTION"}
+{"id":"HN03","review":"1:15-1:30 这段没问题，保留","expected_status":"NO_ACTION"}
+{"id":"HN04","review":"整体可以，不需要再改了","expected_status":"NO_ACTION"}
