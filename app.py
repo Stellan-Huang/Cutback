@@ -124,6 +124,29 @@ OUTPUT_PATH = SESSION_DIR / "output.mp4"
 
 st.title("Cutback")
 
+with st.expander("Beta 使用说明"):
+    st.markdown("""
+Cutback 当前为邀请测试版本。
+
+**建议素材**
+- MP4 视频
+- 建议时长 ≤ 3 分钟
+- 建议文件 ≤ 30 MB
+
+**当前能力**
+- 删除指定片段
+- 移动指定片段
+- 批量处理多条 Review
+- 模糊意见会要求进一步确认
+
+**测试建议**
+请按照你平时真实提出视频修改意见的方式输入，
+不需要为了适应 Cutback 特意改变表达方式。
+
+**数据提示**
+请勿上传包含敏感、保密或无权处理的视频内容。
+    """)
+
 st.caption(
     "Review-to-Edit Agent · "
     "将视频审核意见转换为可确认、可执行的 Timeline 操作"
