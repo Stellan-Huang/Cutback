@@ -287,6 +287,15 @@ def parse_review(review: str) -> ReviewResult:
 
     return ReviewResult.model_validate(data)
 
+def parse_reviews(
+    reviews: list[str],
+) -> list[ReviewResult]:
+    return [
+        parse_review(review)
+        for review in reviews
+    ]
+
+
 
 if __name__ == "__main__":
     test_cases = [

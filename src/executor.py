@@ -1,6 +1,7 @@
 """Execution engine for Cutback."""
+from src.timeline import Segment, build_timeline
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import json
 import os
@@ -8,6 +9,90 @@ import subprocess
 from pathlib import Path
 
 from src.models import EditAction
+def _render_timeline(
+    input_path: str,
+    output_path: str,
+    segments: list[Segment],
+) -> None:
+    filters = []
+    concat_inputs = []
+
+    for index, segment in enumerate(segments):
+        filters.append(
+            f"[0:v]trim="
+            f"start={segment.start}:"
+            f"end={segment.end},"
+            f"setpts=PTS-STARTPTS"
+            f"[v{index}]"
+        )
+
+        filters.append(
+            f"[0:a]atrim="
+            f"start={segment.start}:"
+            f"end={segment.end},"
+            f"asetpts=PTS-STARTPTS"
+            f"[a{index}]"
+        )
+
+        concat_inputs.append(
+            f"[v{index}][a{index}]"
+        )
+
+    filter_complex = (
+        ";".join(filters)
+        + ";"
+        + "".join(concat_inputs)
+        + f"concat=n={len(segments)}:"
+        f"v=1:a=1[v][a]"
+    )
+
+    Path(output_path).parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "aac",
+        output_path,
+    ]
+
+    subprocess.run(
+        command,
+        check=True,
+    )
+
+def execute_actions(
+    actions: list[EditAction],
+    input_path: str,
+    output_path: str,
+) -> None:
+    duration = _get_duration(
+        input_path
+    )
+
+    timeline = build_timeline(
+        duration=duration,
+        actions=actions,
+    )
+
+    _render_timeline(
+        input_path=input_path,
+        output_path=output_path,
+        segments=timeline,
+    )
 
 def _get_duration(input_path: str) -> float:
     command = [
