@@ -107,6 +107,7 @@ ACTION → DELETE_RANGE
 - Regression Test：未观察到既有能力掉点
 
 确立核心原则：**Location ≠ Intent ≠ Permission**
+
 Evaluation 的目标不是追求测试集 100%，
 而是识别可能导致 Agent 未经授权修改作品的 Over-execution。
 
