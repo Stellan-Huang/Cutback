@@ -1,21 +1,18 @@
+import hmac
+import os
+import uuid
 from pathlib import Path
 
 import streamlit as st
 
-from src.agent import parse_reviews
+from src.agent import parse_review
 from src.executor import execute_actions
 from src.models import EditAction, ReviewResult
 
 
-DATA_DIR = Path("data")
-OUTPUT_DIR = Path("outputs")
-
-INPUT_PATH = DATA_DIR / "uploaded.mp4"
-OUTPUT_PATH = OUTPUT_DIR / "cutback_result.mp4"
-
-DATA_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
-
+# ============================================================
+# 基础配置
+# ============================================================
 
 st.set_page_config(
     page_title="Cutback",
@@ -24,21 +21,152 @@ st.set_page_config(
 )
 
 
+MAX_UPLOAD_MB = 100
+
+
+# ============================================================
+# 配置读取
+# 本地优先读取环境变量 / .env
+# Streamlit Cloud 可读取 Secrets
+# ============================================================
+
+def get_setting(name: str, default: str = "") -> str:
+    value = os.getenv(name)
+
+    if value:
+        return value
+
+    try:
+        return str(st.secrets.get(name, default))
+    except Exception:
+        return default
+
+
+# 确保 agent.py 中通过 os.getenv() 也能读取 Streamlit Cloud Secrets
+siliconflow_api_key = get_setting("SILICONFLOW_API_KEY")
+
+if siliconflow_api_key:
+    os.environ["SILICONFLOW_API_KEY"] = siliconflow_api_key
+
+siliconflow_model = get_setting("SILICONFLOW_MODEL")
+
+if siliconflow_model:
+    os.environ["SILICONFLOW_MODEL"] = siliconflow_model
+
+
+# ============================================================
+# Beta 访问控制
+# ============================================================
+
+def check_access() -> None:
+    expected_code = get_setting("CUTBACK_ACCESS_CODE")
+
+    # 未配置访问码时直接开放
+    if not expected_code:
+        return
+
+    if st.session_state.get("authenticated"):
+        return
+
+    st.title("Cutback")
+    st.caption("Review-to-Edit Agent · Private Beta")
+
+    code = st.text_input(
+        "Beta 访问码",
+        type="password",
+        placeholder="请输入邀请访问码",
+    )
+
+    if st.button(
+        "进入 Cutback",
+        type="primary",
+    ):
+        if hmac.compare_digest(
+            code,
+            expected_code,
+        ):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("访问码错误。")
+
+    st.stop()
+
+
+check_access()
+
+
+# ============================================================
+# 每个用户使用独立运行目录
+# ============================================================
+
+if "session_id" not in st.session_state:
+    st.session_state["session_id"] = uuid.uuid4().hex
+
+
+SESSION_DIR = (
+    Path("runtime")
+    / st.session_state["session_id"]
+)
+
+SESSION_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
+INPUT_PATH = SESSION_DIR / "input.mp4"
+OUTPUT_PATH = SESSION_DIR / "output.mp4"
+
+
+# ============================================================
+# 页面标题
+# ============================================================
+
 st.title("Cutback")
+
 st.caption(
     "Review-to-Edit Agent · "
-    "将视频审核意见转换为可执行、可确认的视频编辑操作"
+    "将视频审核意见转换为可确认、可执行的 Timeline 操作"
+)
+
+st.caption(
+    "Beta 建议：MP4 · ≤100MB · "
+    "请勿上传敏感或未经授权的视频素材"
 )
 
 
-# =========================
-# 1. 输入
-# =========================
+# ============================================================
+# 上传视频
+# ============================================================
 
 uploaded_file = st.file_uploader(
     "上传视频",
     type=["mp4"],
 )
+
+
+if uploaded_file is not None:
+    file_size_mb = (
+        uploaded_file.size
+        / 1024
+        / 1024
+    )
+
+    st.caption(
+        f"文件大小：{file_size_mb:.1f} MB"
+    )
+
+    if file_size_mb > MAX_UPLOAD_MB:
+        st.error(
+            f"当前 Beta 最大支持 "
+            f"{MAX_UPLOAD_MB}MB 视频。"
+        )
+        st.stop()
+
+
+# ============================================================
+# 输入 Review
+# ============================================================
 
 reviews_text = st.text_area(
     "审核意见",
@@ -49,8 +177,9 @@ reviews_text = st.text_area(
         "00:50-01:00 这里有点拖\n"
         "01:10-01:20 这段挺好的，保留"
     ),
-    height=160,
+    height=180,
 )
+
 
 reviews = [
     line.strip()
@@ -59,9 +188,28 @@ reviews = [
 ]
 
 
-# =========================
-# 2. 分析全部 Review
-# =========================
+# ============================================================
+# 清除上一轮动态控件状态
+# ============================================================
+
+def clear_dynamic_state() -> None:
+    prefixes = (
+        "approve_",
+        "start_",
+        "end_",
+        "destination_",
+    )
+
+    for key in list(
+        st.session_state.keys()
+    ):
+        if key.startswith(prefixes):
+            del st.session_state[key]
+
+
+# ============================================================
+# 分析全部 Review
+# ============================================================
 
 if st.button(
     "分析全部意见",
@@ -71,230 +219,146 @@ if st.button(
         st.error("请先上传视频。")
 
     elif not reviews:
-        st.error("请输入至少一条审核意见。")
+        st.error(
+            "请输入至少一条审核意见。"
+        )
 
     else:
         INPUT_PATH.write_bytes(
             uploaded_file.getbuffer()
         )
 
-        # 新一轮分析开始后，
-        # 旧输出和旧动态控件全部失效
+        # 新一轮分析时清除旧结果
+        clear_dynamic_state()
+
         st.session_state.pop(
             "output_ready",
             None,
         )
 
-        st.session_state.pop(
-            "review_items",
-            None,
-        )
+        if OUTPUT_PATH.exists():
+            OUTPUT_PATH.unlink()
 
-        dynamic_prefixes = (
-            "approve_",
-            "start_",
-            "end_",
-            "destination_",
-        )
+        items = []
 
-        for key in list(
-            st.session_state.keys()
+        with st.spinner(
+            f"正在分析 {len(reviews)} 条审核意见..."
         ):
-            if key.startswith(
-                dynamic_prefixes
-            ):
-                del st.session_state[key]
+            for review in reviews:
+                try:
+                    result = parse_review(
+                        review
+                    )
 
-        try:
-            with st.spinner(
-                f"正在分析 {len(reviews)} 条审核意见..."
-            ):
-                results = parse_reviews(
-                    reviews
-                )
+                    items.append(
+                        {
+                            "review": review,
+                            "result": result.model_dump(),
+                            "error": None,
+                        }
+                    )
 
-            items = [
-                {
-                    "review": review,
-                    "result": result.model_dump(),
-                }
-                for review, result in zip(
-                    reviews,
-                    results,
-                )
-            ]
+                except Exception as e:
+                    items.append(
+                        {
+                            "review": review,
+                            "result": None,
+                            "error": str(e),
+                        }
+                    )
 
-            st.session_state[
-                "review_items"
-            ] = items
+        st.session_state[
+            "review_items"
+        ] = items
 
-            st.session_state[
-                "input_ready"
-            ] = True
-
-            # 为 ACTION 初始化可编辑参数
-            for index, item in enumerate(items):
-                result = ReviewResult.model_validate(
-                    item["result"]
-                )
-
-                if (
-                    result.status == "ACTION"
-                    and result.action is not None
-                ):
-                    action = result.action
-
-                    st.session_state[
-                        f"start_{index}"
-                    ] = action.start_time
-
-                    st.session_state[
-                        f"end_{index}"
-                    ] = action.end_time
-
-                    if (
-                        action.action
-                        == "MOVE_RANGE"
-                    ):
-                        st.session_state[
-                            f"destination_{index}"
-                        ] = action.destination_time
-
-            st.success(
-                f"已完成 {len(reviews)} 条审核意见分析。"
-            )
-
-        except Exception as e:
-            st.error(
-                f"分析失败：{e}"
-            )
+        st.session_state[
+            "input_ready"
+        ] = True
 
 
-# =========================
-# 3. 展示 Review Queue
-# =========================
+# ============================================================
+# 展示 Review Queue
+# ============================================================
 
-approved_actions = []
+approved_actions: list[EditAction] = []
 
 
 if "review_items" in st.session_state:
-    st.subheader("Cutback 分析结果")
+    st.divider()
+    st.subheader("Review 分析结果")
 
     items = st.session_state[
         "review_items"
     ]
 
-    action_count = 0
-    clarify_count = 0
-    no_action_count = 0
-
-    for item in items:
-        result = ReviewResult.model_validate(
-            item["result"]
-        )
-
-        if result.status == "ACTION":
-            action_count += 1
-
-        elif result.status == "CLARIFY":
-            clarify_count += 1
-
-        elif result.status == "NO_ACTION":
-            no_action_count += 1
-
-    st.caption(
-        f"ACTION {action_count} · "
-        f"CLARIFY {clarify_count} · "
-        f"NO_ACTION {no_action_count}"
-    )
-
-
-    # -------------------------
-    # 逐条 Review
-    # -------------------------
-
     for index, item in enumerate(items):
-        result = ReviewResult.model_validate(
-            item["result"]
-        )
+        with st.container(border=True):
 
-        with st.container(
-            border=True
-        ):
             st.markdown(
-                f"### Review {index + 1}"
+                f"**Review {index + 1}**"
             )
 
             st.write(
                 item["review"]
             )
 
-            # =====================
+            # --------------------------------------------
+            # API / 解析错误
+            # --------------------------------------------
+
+            if item["error"]:
+                st.error(
+                    f"解析失败：{item['error']}"
+                )
+                continue
+
+            result = ReviewResult.model_validate(
+                item["result"]
+            )
+
+            # --------------------------------------------
             # ACTION
-            # =====================
+            # --------------------------------------------
 
             if result.status == "ACTION":
                 action = result.action
 
-                if action is None:
-                    st.error(
-                        "模型返回了无效的 ACTION。"
-                    )
-                    continue
-
                 st.success(
                     f"ACTION · {action.action}"
                 )
-
-                # -----------------
-                # DELETE_RANGE
-                # -----------------
 
                 if (
                     action.action
                     == "DELETE_RANGE"
                 ):
                     st.write(
-                        f"建议删除 "
-                        f"**{action.start_time:.1f}s – "
-                        f"{action.end_time:.1f}s**"
+                        "建议删除 "
+                        f"**{action.start_time:.1f}s "
+                        f"– {action.end_time:.1f}s**"
                     )
-
-                # -----------------
-                # MOVE_RANGE
-                # -----------------
 
                 elif (
                     action.action
                     == "MOVE_RANGE"
                 ):
                     st.write(
-                        f"建议将 "
-                        f"**{action.start_time:.1f}s – "
-                        f"{action.end_time:.1f}s** "
-                        f"移动到 "
+                        "建议将 "
+                        f"**{action.start_time:.1f}s "
+                        f"– {action.end_time:.1f}s** "
+                        "移动到 "
                         f"**{action.destination_time:.1f}s**"
                     )
-
-                else:
-                    st.error(
-                        f"暂不支持的编辑操作："
-                        f"{action.action}"
-                    )
-                    continue
 
                 st.caption(
                     "执行前可以修改参数。"
                 )
 
-
-                # -----------------
-                # 公共参数
-                # -----------------
-
                 start_time = st.number_input(
                     "开始时间（秒）",
                     min_value=0.0,
+                    value=float(
+                        action.start_time
+                    ),
                     step=0.1,
                     key=f"start_{index}",
                 )
@@ -302,14 +366,12 @@ if "review_items" in st.session_state:
                 end_time = st.number_input(
                     "结束时间（秒）",
                     min_value=0.0,
+                    value=float(
+                        action.end_time
+                    ),
                     step=0.1,
                     key=f"end_{index}",
                 )
-
-
-                # -----------------
-                # MOVE 参数
-                # -----------------
 
                 destination_time = None
 
@@ -321,6 +383,9 @@ if "review_items" in st.session_state:
                         st.number_input(
                             "目标位置（秒）",
                             min_value=0.0,
+                            value=float(
+                                action.destination_time
+                            ),
                             step=0.1,
                             key=(
                                 f"destination_"
@@ -328,11 +393,6 @@ if "review_items" in st.session_state:
                             ),
                         )
                     )
-
-
-                # -----------------
-                # Human Approval
-                # -----------------
 
                 approved = st.checkbox(
                     "批准执行",
@@ -345,28 +405,36 @@ if "review_items" in st.session_state:
                             action.action
                             == "DELETE_RANGE"
                         ):
-                            final_action = EditAction(
-                                action="DELETE_RANGE",
-                                start_time=start_time,
-                                end_time=end_time,
-                            )
-
-                        elif (
-                            action.action
-                            == "MOVE_RANGE"
-                        ):
-                            final_action = EditAction(
-                                action="MOVE_RANGE",
-                                start_time=start_time,
-                                end_time=end_time,
-                                destination_time=(
-                                    destination_time
-                                ),
+                            final_action = (
+                                EditAction(
+                                    action=(
+                                        "DELETE_RANGE"
+                                    ),
+                                    start_time=(
+                                        start_time
+                                    ),
+                                    end_time=(
+                                        end_time
+                                    ),
+                                )
                             )
 
                         else:
-                            raise ValueError(
-                                "不支持的编辑操作"
+                            final_action = (
+                                EditAction(
+                                    action=(
+                                        "MOVE_RANGE"
+                                    ),
+                                    start_time=(
+                                        start_time
+                                    ),
+                                    end_time=(
+                                        end_time
+                                    ),
+                                    destination_time=(
+                                        destination_time
+                                    ),
+                                )
                             )
 
                         approved_actions.append(
@@ -378,10 +446,9 @@ if "review_items" in st.session_state:
                             f"参数无效：{e}"
                         )
 
-
-            # =====================
+            # --------------------------------------------
             # CLARIFY
-            # =====================
+            # --------------------------------------------
 
             elif (
                 result.status
@@ -391,18 +458,14 @@ if "review_items" in st.session_state:
                     "CLARIFY · 需要进一步确认"
                 )
 
-                st.write(
-                    result.message
-                    or (
-                        "当前信息不足以确定"
-                        "具体编辑操作。"
+                if result.message:
+                    st.write(
+                        result.message
                     )
-                )
 
-
-            # =====================
+            # --------------------------------------------
             # NO_ACTION
-            # =====================
+            # --------------------------------------------
 
             elif (
                 result.status
@@ -418,16 +481,17 @@ if "review_items" in st.session_state:
                     )
 
 
-    # =========================
-    # 4. 批量执行
-    # =========================
+# ============================================================
+# 执行批准的 Actions
+# ============================================================
 
+if "review_items" in st.session_state:
     st.divider()
 
     st.write(
-        f"已批准 "
+        "已批准 "
         f"**{len(approved_actions)}** "
-        f"个编辑操作"
+        "个编辑操作"
     )
 
     if st.button(
@@ -437,6 +501,11 @@ if "review_items" in st.session_state:
         if not approved_actions:
             st.warning(
                 "请至少批准一个编辑操作。"
+            )
+
+        elif not INPUT_PATH.exists():
+            st.error(
+                "原视频文件不存在，请重新上传。"
             )
 
         else:
@@ -464,38 +533,42 @@ if "review_items" in st.session_state:
                 )
 
 
-# =========================
-# 5. 视频预览
-# =========================
+# ============================================================
+# Original / Revised 对比
+# ============================================================
 
 if (
-    st.session_state.get("input_ready")
+    st.session_state.get(
+        "input_ready"
+    )
     and INPUT_PATH.exists()
 ):
     st.divider()
 
     if (
-        st.session_state.get("output_ready")
+        st.session_state.get(
+            "output_ready"
+        )
         and OUTPUT_PATH.exists()
     ):
         left, right = st.columns(2)
 
         with left:
-            st.subheader("原视频")
+            st.subheader("Original")
 
             st.video(
                 str(INPUT_PATH)
             )
 
         with right:
-            st.subheader("修改后")
+            st.subheader("Revised")
 
             st.video(
                 str(OUTPUT_PATH)
             )
 
     else:
-        st.subheader("原视频")
+        st.subheader("Original")
 
         st.video(
             str(INPUT_PATH)
