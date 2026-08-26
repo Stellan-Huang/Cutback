@@ -6,3 +6,4 @@ runtime/
 outputs/
 data/*.mp4
 .streamlit/secrets.toml
+.cursor/
