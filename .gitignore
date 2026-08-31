@@ -7,3 +7,4 @@ outputs/
 data/*.mp4
 .streamlit/secrets.toml
 .cursor/
+.tests/user-test

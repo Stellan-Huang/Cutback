@@ -2,35 +2,31 @@
 
 ## 1. 产品定义
 
-Cutback 是一个 **Review-to-Edit Agent**。
-
-它将视频审核意见理解为结构化编辑决策，并在用户确认后转换为实际 Timeline 操作。
+Cutback 是一个 **Review-to-Edit Agent**，目标是把视频审核意见转化为结构化、可确认、可执行的时间线编辑动作。
 
 核心流程：
 
-**Review → Interpret → Confirm → Plan → Execute → Preview**
+**审核意见 → 理解 → 确认 → 规划 → 执行 → 预览**
 
----
+V0 不试图自动完成整条视频，也不构建完整的专业剪辑软件。它只解决 Review 到 Edit 中间的一层：理解用户到底想改什么，在获得确认后，把意图转换成真实的视频编辑操作。
 
 ## 2. 用户场景
 
-用户已有一版视频，并收到一条或多条审核意见，例如：
+用户已经有一版视频，并收到一条或多条审核意见，例如：
 
-> 00:10–00:20 这段删掉。  
-> 00:30–00:40 这段放到开头。  
-> 00:50–01:00 这里有点拖。  
+> 00:10–00:20 这段删掉。
+> 00:30–00:40 这段放到开头。
+> 00:50–01:00 这里有点拖。
 > 01:10–01:20 这段挺好，保留。
 
-Cutback 分别判断为：
+Cutback 会分别判断为：
 
 - `DELETE_RANGE`
 - `MOVE_RANGE`
 - `CLARIFY`
 - `NO_ACTION`
 
-用户只批准需要执行的操作，Cutback 再统一生成修改后版本。
-
----
+系统不会在理解出修改意图后立即执行，而是先把建议展示给用户。用户可以接受、修改或拒绝，只有确认后的编辑动作才会进入最终时间线规划并实际执行。
 
 ## 3. 核心假设
 
@@ -38,47 +34,41 @@ V0 只验证一个问题：
 
 > **Review 能否被可靠地理解，并转化为用户愿意执行的视频编辑操作。**
 
-不验证完整自动剪辑，也不构建完整 NLE。
+这里验证的不是“AI 能不能自动剪视频”，而是 Review-to-Edit 这一步本身是否成立。因此 V0 不追求完整编辑能力，也不尝试覆盖专业剪辑软件的全部操作空间。
 
----
+## 4. 审核意见决策
 
-## 4. Review 决策
+每条 Review 会先被判断为三种状态之一：`ACTION`、`CLARIFY` 或 `NO_ACTION`。
 
-Cutback 将每条 Review 判断为三种状态：
+`ACTION` 表示信息已经足够明确，并且当前系统具备对应的执行能力；
+`CLARIFY` 表示用户存在修改意图，但位置、动作、参数或授权仍不充分，需要进一步确认；
+`NO_ACTION` 表示用户明确认可、要求保留，或者提出的操作超出当前系统能力，不应直接执行。
 
-### ACTION
+核心原则是：
 
-信息充分，且当前系统具备对应执行能力。
+> **定位 ≠ 意图 ≠ 授权执行**
 
-### CLARIFY
+也就是说，知道用户在说哪里，不等于知道他想怎么改；知道他对这一段不满意，也不等于已经获得修改权限。
 
-存在修改意图，但信息不足或操作不明确，需要用户补充。
+例如：
 
-### NO_ACTION
+> 00:10–00:20 这里有点拖。
 
-用户明确认可、保留或表示无需修改。
+这里虽然有明确时间位置，也表达了负面评价，但用户可能希望删除、加速、缩短或者重新剪辑，系统不应该自行推断，因此返回 `CLARIFY`。
 
-核心原则：
+而：
 
-> **Location ≠ Intent ≠ Permission**
+> 00:10–00:20 这段删掉。
 
-时间码只表示 Review 指向的位置，不代表修改授权。
+同时具备位置、动作和明确授权，因此可以生成 `ACTION → DELETE_RANGE`。
 
-只有明确且当前系统可执行的编辑指令才能产生 `ACTION`。
+Cutback 默认不猜测用户没有表达出来的操作。对于创作工作流来说，多确认一次通常比错误修改作品的成本更低。
 
-信息不足时优先 `CLARIFY`，不猜测用户意图。
+## 5. 编辑动作
 
----
+V0 当前只支持两种真实时间线操作：`DELETE_RANGE` 和 `MOVE_RANGE`。
 
-
-
-## 5. EditAction
-
-当前支持两种 Timeline 操作。
-
-### DELETE_RANGE
-
-删除指定时间区间。
+`DELETE_RANGE` 用于删除指定时间区间：
 
 ```json
 {
@@ -88,11 +78,7 @@ Cutback 将每条 Review 判断为三种状态：
 }
 ```
 
-
-
-### MOVE_RANGE
-
-将指定时间区间移动到目标位置。
+`MOVE_RANGE` 用于把指定区间移动到新的位置：
 
 ```json
 {
@@ -103,46 +89,27 @@ Cutback 将每条 Review 判断为三种状态：
 }
 ```
 
-`destination_time` 使用**原始视频 Timeline 坐标**。
+`destination_time` 使用**原始视频的时间线坐标**。基本约束包括：`start_time >= 0`、`end_time > start_time`；`MOVE_RANGE` 必须提供合法的目标时间，并且目标位置不能落在被移动片段自身范围内。
 
-基本约束：
+LLM 负责理解自然语言 Review，并生成结构化结果；Pydantic 负责检查输出结构和参数是否合法。两者职责分开：模型负责理解，程序负责约束。
 
-- `start_time >= 0`
-- `end_time > start_time`
-- `MOVE_RANGE` 必须提供合法 `destination_time`
-- 目标位置不能位于自身移动区间内部
+## 6. 多条 Review
 
-LLM 负责理解 Review，Pydantic 负责约束结构化结果。
+Cutback 支持一次处理多条审核意见。每条 Review 会被独立解析成 `ACTION / CLARIFY / NO_ACTION`，不会因为前一条意见的执行结果改变后一条意见的理解方式。
 
----
+对于 `ACTION`，用户可以：
 
-
-
-## 6. Multiple Reviews
-
-Cutback 支持一次处理多条 Review。
-
-每条 Review 独立解析为：
-
-**ACTION / CLARIFY / NO_ACTION**
-
-用户可以逐条：
-
-- 接受 AI 建议；
-- 修改操作参数后接受；
+- 直接接受 AI 建议；
+- 修改参数后接受；
 - 拒绝操作。
 
-只有被批准的 `ACTION` 才进入最终 Timeline Planning。
+只有最终被批准的动作才会进入时间线规划。
 
-所有 Review 时间码均基于**原始视频 Timeline**，避免前序修改导致后续时间坐标漂移。
+所有 Review 中的时间码都以**原始视频时间线**为基准，而不是基于已经修改后的中间版本。这样可以避免前面的删除或移动导致后续时间坐标整体漂移。
 
----
+## 7. 时间线规划
 
-
-
-## 7. Timeline Planning
-
-多条已批准 EditAction 不按顺序直接修改视频，而是先统一转换为最终 Timeline。
+多条已经批准的编辑动作不会按照输入顺序逐条直接修改视频，而是先统一转换成最终时间线。
 
 例如：
 
@@ -151,103 +118,83 @@ DELETE 10–20
 MOVE 30–40 → 0
 ```
 
-原始 Timeline：
+原始时间线：
 
 ```text
 0–10 → 10–20 → 20–30 → 30–40 → 40–End
 ```
 
-最终 Timeline：
+最终时间线：
 
 ```text
 30–40 → 0–10 → 20–30 → 40–End
 ```
 
-对于以下冲突，V0 不自动推断执行顺序：
+之所以增加统一规划层，是因为多个单独看起来合法的动作组合在一起后可能发生冲突。V0 重点检查三类情况：多个操作的源区间发生重叠；`MOVE` 的目标位置落入其他待编辑范围；多个 `MOVE` 使用互相冲突的目标位置。
 
-- 多个操作源范围重叠；
-- MOVE 目标落入其他待编辑范围；
-- 多个 MOVE 使用冲突目标位置。
+发生这类冲突时，系统不会自动猜测一个“合理”的执行顺序，而是停止执行，让用户修改或取消相关操作。
 
-发生冲突时拒绝自动执行，由用户修改或取消相关操作。
+## 8. 执行层
 
----
+用户确认后，最终编辑动作按照以下流程执行：
 
+**已批准动作 → 时间线规划 → 执行器 → FFmpeg → 输出视频**
 
+AI 本身不直接修改视频。它负责理解和提出编辑建议，真正的视频处理由确定性程序完成。
 
-## 8. 执行
+这样做是有意的：自然语言理解允许存在概率和不确定性，但真正写入视频的执行结果必须可预测、可检查。
 
-最终 Timeline 经确认后，由确定性执行层完成实际视频修改：
-
-**Approved Actions → Timeline Planner → Executor → FFmpeg → Output**
-
-AI 不直接操作视频。
-
----
-
-
-
-## 9. Human-in-the-loop
+## 9. 人工确认机制
 
 对于 `ACTION`：
 
-- 直接执行 AI 建议 → **Accept**
-- 修改参数后执行 → **Modify**
+- 直接采用 AI 建议 → **Accept**
+- 修改参数后采用 → **Modify**
 - 不批准 → **Reject**
 
-对于 `CLARIFY`：
+对于 `CLARIFY`，系统不会执行，而是说明缺少什么信息，并要求用户补充。
 
-- 不执行；
-- 请求用户补充信息。
+对于 `NO_ACTION`，系统同样不会执行，并说明当前不执行的原因。
 
-对于 `NO_ACTION`：
-
-- 不执行。
-
-核心原则：
+核心原则是：
 
 > **AI proposes, human controls.**
 
-错误执行的成本高于多确认一次，因此 Cutback 优先避免未经授权的修改。
-
----
-
-
+错误执行的成本往往高于一次额外确认，因此 Cutback 优先防止未经授权的修改。但“安全”也不能成为无限增加确认步骤的理由，`CLARIFY` 和 `NO_ACTION` 必须有清晰边界，并向用户解释原因。
 
 ## 10. Evaluation
 
-当前 Evaluation 覆盖：
+当前 Evaluation 主要覆盖：
 
-- Review Status Accuracy
-- EditAction Accuracy
-- Holdout Validation
-- Regression Test
-- Response Latency
-- Bad Case Analysis
+- Review 状态判断准确率
+- EditAction 准确率
+- 留出集验证
+- 回归测试
+- 响应延迟
+- Bad Case 分析
 
-已通过 Bad Case 分析迭代 Review Decision Policy，并使用未参与 Prompt 调整的 Holdout 验证泛化能力。
+第一版测试通过 Bad Case 暴露了模型把负面评价误解成删除授权的问题，因此调整了 Review Decision Policy，并形成 `Location ≠ Intent ≠ Permission` 原则。修改策略后，再使用未参与 Prompt 调整的留出集检查泛化情况。
 
-新增 EditAction 后继续运行原有 Evaluation Set，确保既有能力不发生回归。
+每次增加新的编辑动作后，也会重新运行原有 Evaluation Set，避免为了支持新能力破坏已有决策边界。
 
-下一阶段重点转向真实用户测试，记录：
+下一阶段真正需要验证的，不再只是内部准确率，而是实际使用中的：
 
 - Accept
 - Modify
 - Reject
-- 实际 Bad Case
+- Unauthorized Execution
+- Clarify 次数
 - Review-to-Revision 完成时间
-- 用户对 Agent 决策边界的反馈
+- 真实 Bad Case
 
----
+这些数据才能回答一个更重要的问题：Agent 的判断和确认机制究竟降低了 Review-to-Edit 成本，还是只增加了一层新的交互。
 
-
-
-## 11. 当前产品流程
+## 11. 当前完整流程
 
 ```text
 上传视频
 ↓
-输入多条 Review
+输入多条审核意见
 ↓
 逐条生成 ReviewResult
 ↓
@@ -257,56 +204,44 @@ ACTION / CLARIFY / NO_ACTION
 ↓
 Approved EditActions
 ↓
-Timeline Planning
+时间线规划
 ↓
-Conflict Validation
+冲突检查
 ↓
 FFmpeg 执行
 ↓
-Original / Revised 对比
+原视频 / 修改后视频对比
 ```
 
----
 
 
+## 12. 当前不做什么
 
-## 12. 非目标
+V0 暂不实现完整 NLE、Premiere / Resolve 插件、Frame.io 集成、多轨编辑、多人协作、AI 视频生成、Model Routing、Style Memory、无时间码语义定位、用户系统等能力。
 
-V0 暂不实现：
-
-- 完整 NLE
-- Premiere / Resolve 插件
-- Frame.io 集成
-- 多轨编辑
-- 多人协作
-- AI 视频生成
-- Model Routing
-- Style Memory
-- 无时间码语义定位
-- 用户系统
-- 云端部署
+这些并不是长期没有价值，而是不属于当前需要验证的核心问题。
 
 > **只有真实需求证明必要时，才引入新的复杂度。**
 
----
-
-
+V0 的重点不是尽可能扩大功能列表，而是先确保 Review 决策、权限确认、时间线规划和确定性执行这条最小链路成立。
 
 ## 13. 成功标准
 
-Cutback 能稳定完成：
+V0 的工程闭环是：
 
 **Multiple Reviews
 → 正确判断 ACTION / CLARIFY / NO_ACTION
-→ 合法 DELETE_RANGE / MOVE_RANGE
-→ Human Approval
-→ Timeline Planning
-→ Conflict Validation
+→ 生成合法的 DELETE_RANGE / MOVE_RANGE
+→ 用户确认
+→ 时间线规划
+→ 冲突检查
 → 实际修改视频
 → 输出可播放的新版本**
 
-并通过 Evaluation 与真实用户行为持续验证：
+完成这条链路只能说明系统已经“能工作”，还不能说明产品问题已经被验证。
 
-> **Agent 是否真正降低了从 Review 到 Revision 的操作成本。**
+真正的产品成功标准仍然是：
 
-即认为 V0 核心闭环成立。
+> **Agent 是否在不增加越权修改和额外交互成本的前提下，降低了从 Review 到 Revision 的实际成本。**
+
+因此当前 V0 可以视为核心技术和交互闭环成立；Review-to-Edit 的真实效率价值，仍需要在基础能力进一步补齐后通过用户行为验证。
